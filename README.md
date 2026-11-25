@@ -30,6 +30,7 @@ Settings are notebook widgets (`catalog`, `landing_root`, `schema_prefix`, `rule
 1. `00_config` settings cell: widgets instead of constants (see above). **The interactive default for `schema_prefix` is now `dev_<your user>_`**, so a run in a Git folder no longer writes to your real `bronze/silver/gold`. Set the widget to empty to do that on purpose. The production job passes an empty prefix.
 2. **Bug fix:** `load_fact` now deletes fact rows that are no longer in the query result (`upsert(..., delete_missing=True)`, Delta `WHEN NOT MATCHED BY SOURCE THEN DELETE`). Before, after Batch 4 the sales line 10001 (rejected as a duplicate) stayed in `gold.fact_sales`: 395 rows instead of 394. The new check `fact_sales = silver.sales` found it.
 3. `rules_path` defaults to the `dq_rules.yml` next to the notebook.
+4. **Load history:** every `load_silver` call appends one row to `silver.load_log` (`loaded` / `nothing new` / `failed` + error text, new files and rows, rejected rows, totals, seconds). `load_report()` shows it. `verify` checks the latest load of each source did not fail, and in the CI rerun that every source says `nothing new`.
 
 ## Tested / not tested
 - **Run locally (Spark stand-ins, the same technique as before):** all four batches through `01_dimensions` and `02_facts` with the new settings cell and prefix; `verify` first run (all checks, 394 / 33), a rerun with no new files (counts unchanged), `reset_schemas` and its empty-prefix guard; `tests/test_repo.py` (25 tests, and a copy with three deliberate mistakes fails as it should).

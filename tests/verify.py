@@ -60,6 +60,9 @@ check("fact_sales has exactly the rows of silver.sales",
 check("silver.dq_log has rows", 1 if one(f"SELECT count(*) FROM {SILVER}.dq_log") == 0 else 0)
 leftovers = spark.sql(f"SHOW TABLES IN {SILVER} LIKE '_work_*'").count()
 check("no _work_ tables are left in silver", leftovers)
+check("silver.load_log has rows", 1 if one(f"SELECT count(*) FROM {SILVER}.load_log") == 0 else 0)
+check("the latest load of every source did not fail",
+      one(f"SELECT count(*) FROM (SELECT status, row_number() OVER (PARTITION BY source ORDER BY run_ts DESC) AS rn FROM {SILVER}.load_log) WHERE rn = 1 AND status = 'failed'"))
 
 # COMMAND ----------
 # Optional exact counts (sample data only)
@@ -83,6 +86,8 @@ state = f"{SILVER}._ci_counts"
 if phase == "first":
     spark.createDataFrame(list(now.items()), "name string, n long").write.mode("overwrite").saveAsTable(state)
 elif phase == "rerun":
+    check("rerun: the latest load of every source says 'nothing new'",
+          one(f"SELECT count(*) FROM (SELECT status, row_number() OVER (PARTITION BY source ORDER BY run_ts DESC) AS rn FROM {SILVER}.load_log) WHERE rn = 1 AND status <> 'nothing new'"))
     before = dict(spark.table(state).collect())
     for k, n in now.items():
         check(f"rerun with no new files: {k} unchanged ({before[k]} -> {n})", int(before[k] != n))
