@@ -1,0 +1,6 @@
+# for the tests that run on every pull request (no Databricks needed)
+pytest>=8
+pyyaml>=6
+nbformat>=5.9
+pyspark>=3.5,<5
+databricks-labs-dqx>=0.9

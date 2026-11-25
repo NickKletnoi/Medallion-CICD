@@ -1,0 +1,3 @@
+customer_id,name,email,segment,country,updated_at
+1,OLDER VERSION,dan.smith1@example.com,smb,gb,2020-01-01 00:00:00
+2,Xena Novak,xena.novak2@example.com,enterprise,US,2026-12-02 00:00:00

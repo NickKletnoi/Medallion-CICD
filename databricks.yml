@@ -1,0 +1,102 @@
+# Databricks Asset Bundle: the notebooks, the rules file and the workflow, deployed the same way to every environment.
+#   dev   your own copy (schemas dev_<you>_bronze/silver/gold), deployed from your machine or Cloud Shell
+#   ci    a throw-away copy (schemas ci_*) that a pull request deploys, runs the tests on and removes again
+#   prod  the real thing, deployed by the pipeline after a merge to main
+# The workspace host and credentials are NOT in this file: they come from the Databricks CLI profile (dev) or from the
+# DATABRICKS_HOST / DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET environment variables (GitHub Actions).
+bundle:
+  name: medallion
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog; the bronze / silver / gold schemas live inside it
+    default: main_lf
+  landing_root:
+    description: Volume folder with the dims/ and facts/ source folders
+    default: /Volumes/main_lf/default/data/Landing
+  schema_prefix:
+    description: Put in front of bronze / silver / gold. Empty = the real schemas
+    default: ""
+  expected_fact_sales:
+    description: Exact row count the CI test expects for the sample data (empty = do not check)
+    default: ""
+  expected_fact_returns:
+    default: ""
+
+targets:
+  dev:
+    mode: development            # resource names get a [dev <you>] prefix, the schedule is paused
+    default: true
+    variables:
+      schema_prefix: dev_${workspace.current_user.short_name}_
+      landing_root: /Volumes/main_lf/default/data/Landing_dev
+
+  ci:
+    mode: development
+    variables:
+      schema_prefix: ci_
+      landing_root: /Volumes/main_lf/default/data/Landing_ci
+      expected_fact_sales: "394"      # sample data of test_data/ (Batch1 to Batch4)
+      expected_fact_returns: "33"
+    resources:
+      jobs:
+        medallion_ci_test:
+          name: medallion-ci-test
+          max_concurrent_runs: 1
+          parameters:
+            - { name: catalog,       default: "${var.catalog}" }
+            - { name: landing_root,  default: "${var.landing_root}" }
+            - { name: schema_prefix, default: "${var.schema_prefix}" }
+            - { name: rules_path,    default: "${workspace.file_path}/src/dq_rules.yml" }
+          tasks:
+            # 1 start from nothing
+            - task_key: reset
+              notebook_task: { notebook_path: ./tests/reset_schemas.py }
+            # 2 first run: everything is new
+            - task_key: dimensions_run1
+              depends_on: [{ task_key: reset }]
+              notebook_task: { notebook_path: ./src/01_dimensions.ipynb }
+            - task_key: facts_run1
+              depends_on: [{ task_key: dimensions_run1 }]
+              notebook_task: { notebook_path: ./src/02_facts.ipynb }
+            - task_key: verify_first
+              depends_on: [{ task_key: facts_run1 }]
+              notebook_task:
+                notebook_path: ./tests/verify.py
+                base_parameters:
+                  phase: first
+                  expected_fact_sales: "${var.expected_fact_sales}"
+                  expected_fact_returns: "${var.expected_fact_returns}"
+            # 3 second run with no new files: nothing may change
+            - task_key: dimensions_run2
+              depends_on: [{ task_key: verify_first }]
+              notebook_task: { notebook_path: ./src/01_dimensions.ipynb }
+            - task_key: facts_run2
+              depends_on: [{ task_key: dimensions_run2 }]
+              notebook_task: { notebook_path: ./src/02_facts.ipynb }
+            - task_key: verify_rerun
+              depends_on: [{ task_key: facts_run2 }]
+              notebook_task:
+                notebook_path: ./tests/verify.py
+                base_parameters:
+                  phase: rerun
+                  expected_fact_sales: "${var.expected_fact_sales}"
+                  expected_fact_returns: "${var.expected_fact_returns}"
+            # 4 remove the ci_ schemas, whether the tests passed or not
+            - task_key: cleanup
+              depends_on: [{ task_key: verify_rerun }]
+              run_if: ALL_DONE
+              notebook_task: { notebook_path: ./tests/reset_schemas.py }
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      schema_prefix: ""
+    # Recommended: run the job as a service principal instead of the person who deploys.
+    # run_as:
+    #   service_principal_name: "<application id of the service principal>"

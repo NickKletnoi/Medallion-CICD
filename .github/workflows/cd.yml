@@ -1,0 +1,34 @@
+# Runs when a pull request is merged into main: deploys the bundle to production.
+# Add "required reviewers" to the GitHub environment "production" if a person must approve each release.
+name: cd
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_now:
+        description: "Run the workflow once after deploying"
+        type: boolean
+        default: false
+
+concurrency:
+  group: databricks-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production               # GitHub environment "production" holds the three secrets below
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - run: databricks bundle validate -t prod
+      - run: databricks bundle deploy -t prod
+      - name: Run once (manual start only)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_now
+        run: databricks bundle run medallion -t prod
