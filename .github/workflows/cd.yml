@@ -1,4 +1,6 @@
-# Runs when a pull request is merged into main: deploys the bundle to production.
+# Runs when a pull request is merged into main (or when started by hand from the Actions tab):
+#   1. validates and deploys the bundle to production  (job "medallion-prod")
+#   2. runs that job and waits for it; the workflow is green only if all three tasks succeed (dimensions, facts, verify)
 # Add "required reviewers" to the GitHub environment "production" if a person must approve each release.
 name: cd
 
@@ -6,18 +8,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      run_now:
-        description: "Run the workflow once after deploying"
-        type: boolean
-        default: false
 
+# never two production deployments or runs at the same time
 concurrency:
   group: databricks-prod
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  deploy-and-run:
     runs-on: ubuntu-latest
     environment: production               # GitHub environment "production" holds the three secrets below
     env:
@@ -27,8 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: databricks/setup-cli@main
-      - run: databricks bundle validate -t prod
-      - run: databricks bundle deploy -t prod
-      - name: Run once (manual start only)
-        if: github.event_name == 'workflow_dispatch' && inputs.run_now
+
+      - name: Validate the bundle
+        run: databricks bundle validate -t prod
+
+      - name: Deploy to production
+        run: databricks bundle deploy -t prod
+
+      - name: Run the job and wait for the result
         run: databricks bundle run medallion -t prod

@@ -86,11 +86,11 @@ def test_dqx_accepts_every_rule():
 
 # ── bundle ───────────────────────────────────────────────────────────────────
 def bundle_files():
-    return [ROOT / "databricks.yml", *sorted((ROOT / "resources").glob("*.yml"))]
+    return [ROOT / "databricks.yml", *sorted((ROOT / "jobs").glob("*.yml"))]
 
 
 def notebook_paths():
-    """every notebook_path of every job (resources/ and targets), as an absolute path"""
+    """every notebook_path of every job (jobs/ folder), as an absolute path"""
     out = []
     for f in bundle_files():
         text = f.read_text()
@@ -116,6 +116,13 @@ def test_bundle_variables_are_declared():
     for f in bundle_files():
         used = set(re.findall(r"\$\{var\.(\w+)\}", f.read_text()))
         assert used <= declared, f"{f.name} uses undeclared variables {sorted(used - declared)}"
+
+
+def test_master_file_is_the_only_one_with_variables_and_targets_of_its_own():
+    """jobs/ files hold jobs only (the ci job may name its target); variables and environments live in databricks.yml"""
+    for f in sorted((ROOT / "jobs").glob("*.yml")):
+        d = yaml.safe_load(f.read_text())
+        assert not set(d) - {"resources", "targets"}, f"{f.name}: only resources (and the ci target) belong in a job file"
 
 
 def test_job_tasks_depend_on_existing_tasks():
@@ -144,6 +151,8 @@ def test_every_job_parameter_is_read_by_a_notebook():
 
 def test_prod_target_never_gets_the_ci_job():
     d = yaml.safe_load((ROOT / "databricks.yml").read_text())
-    assert "medallion_ci_test" in d["targets"]["ci"]["resources"]["jobs"]
+    ci = yaml.safe_load((ROOT / "jobs" / "medallion_ci_test.yml").read_text())
+    assert set(ci) == {"targets"} and set(ci["targets"]) == {"ci"}, "the ci job file must only define the ci target"
+    assert "medallion_ci_test" in ci["targets"]["ci"]["resources"]["jobs"]
     assert "jobs" not in (d["targets"]["prod"].get("resources") or {})
     assert d["targets"]["prod"]["variables"]["schema_prefix"] == "", "prod must use the real (unprefixed) schemas"

@@ -57,11 +57,20 @@ Example used below: a new warning rule that counts customers without a country.
 
 ## D. After the merge
 
-12. The `cd` workflow validates and deploys the bundle to production (workspace folder `/Workspace/Shared/.bundle/medallion/prod`, job `medallion-prod`). Check *Actions → cd*. If you set required reviewers, approve there.
+12. The `cd` workflow validates and deploys the bundle to production (workspace folder `/Workspace/Shared/.bundle/medallion/prod`, job `medallion-prod`) and then **runs the job and waits for it**: `dimensions`, `facts`, `verify`. Check *Actions → cd*; a red run means a task failed, and its log shows which one. The run is incremental, so with no new files it takes seconds. If you set required reviewers, approve there.
 13. **If the PR said a rebuild is needed** (a rule or a column list changed): once after the deploy, open `src/01_dimensions` (or `02_facts`) in your Git folder on `main`, run the first cells down to `%run ./00_config`, set the widget `schema_prefix` to **empty** (= the real schemas), and run only the `load_silver(...)` cell of that source with `rebuild=True` added. Do not commit that edit.
     Silver is incremental: it does not retest rows it already processed, so a changed rule only applies to old rows after a rebuild.
-14. The job runs daily at 06:00 New York time once you set `pause_status: UNPAUSED` in `resources/medallion_job.yml` (that is itself a change: branch, PR, merge). Or start it by hand: *Workflows → medallion-prod → Run now*.
+14. The job runs daily at 06:00 New York time once you set `pause_status: UNPAUSED` in `jobs/medallion_job.yml` (that is itself a change: branch, PR, merge). Or start it by hand: *Workflows → medallion-prod → Run now*.
 15. In your Git folder switch to `main` and **Pull**. Optionally drop your dev copy: run `tests/reset_schemas` with your prefix.
+
+## D2. Adding or changing a job
+Rule: `databricks.yml` is the only master file; every job is one file in `jobs/` (`jobs/<job_name>.yml`). The `include: - jobs/*.yml` line picks them all up, so a new file needs no change to the master.
+Bundles read YAML, not the JSON that the job page shows under *View JSON*. To bring in a job that was built in the UI:
+1. Find its id: *Workflows → the job → Job details → Job ID*.
+2. In a terminal inside the repo: `databricks bundle generate job --existing-job-id <ID> --key <job_name> -t dev`
+3. Move the generated file into `jobs/`, delete the `resources/` folder it may have created, open it and replace hard-coded values with `${var.catalog}` etc., change its `notebook_path`s to `../src/...`, and give the job `name: <job_name>-${bundle.target}`.
+4. Branch, PR, merge as usual. The checks in `tests/test_repo.py` read every file in `jobs/`.
+Delete the hand-built job in the UI (or rename it first) so two jobs with the same name do not exist.
 
 ## E. Rolling back
 

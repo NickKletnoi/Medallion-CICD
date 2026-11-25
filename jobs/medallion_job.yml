@@ -1,0 +1,34 @@
+# The workflow: dimensions -> facts -> checks. Silver is incremental, so a run only processes new files.
+# No compute is configured: the tasks run on serverless compute. If your workspace has no serverless jobs, add a
+#   job_clusters: [...]   and   job_cluster_key: <name>   on every task.
+resources:
+  jobs:
+    medallion:
+      name: medallion-${bundle.target}
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      parameters:
+        - { name: catalog,       default: "${var.catalog}" }
+        - { name: landing_root,  default: "${var.landing_root}" }
+        - { name: schema_prefix, default: "${var.schema_prefix}" }
+        - { name: rules_path,    default: "${workspace.file_path}/src/dq_rules.yml" }
+      tasks:
+        - task_key: dimensions
+          notebook_task:
+            notebook_path: ../src/01_dimensions.ipynb
+        - task_key: facts
+          depends_on:
+            - task_key: dimensions
+          notebook_task:
+            notebook_path: ../src/02_facts.ipynb
+        - task_key: verify
+          depends_on:
+            - task_key: facts
+          notebook_task:
+            notebook_path: ../tests/verify.py
+      # Daily at 06:00 New York time. Paused until you decide to switch it on (change PAUSED to UNPAUSED, merge).
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: America/New_York
+        pause_status: PAUSED

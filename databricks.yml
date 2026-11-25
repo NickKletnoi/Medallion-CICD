@@ -1,6 +1,8 @@
 # Databricks Asset Bundle: the notebooks, the rules file and the workflow, deployed the same way to every environment.
 #   dev   your own copy (schemas dev_<you>_bronze/silver/gold), deployed from your machine or Cloud Shell
 #   ci    a throw-away copy (schemas ci_*) that a pull request deploys, runs the tests on and removes again
+#         (its test job lives in jobs/medallion_ci_test.yml)
+# This is the ONE master file: variables and environments. Every job is its own file in jobs/.
 #   prod  the real thing, deployed by the pipeline after a merge to main
 # The workspace host and credentials are NOT in this file: they come from the Databricks CLI profile (dev) or from the
 # DATABRICKS_HOST / DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET environment variables (GitHub Actions).
@@ -8,7 +10,7 @@ bundle:
   name: medallion
 
 include:
-  - resources/*.yml
+  - jobs/*.yml          # one file per job; this is the only other bundle file you edit
 
 variables:
   catalog:
@@ -41,55 +43,6 @@ targets:
       landing_root: /Volumes/main_lf/default/data/Landing_ci
       expected_fact_sales: "394"      # sample data of test_data/ (Batch1 to Batch4)
       expected_fact_returns: "33"
-    resources:
-      jobs:
-        medallion_ci_test:
-          name: medallion-ci-test
-          max_concurrent_runs: 1
-          parameters:
-            - { name: catalog,       default: "${var.catalog}" }
-            - { name: landing_root,  default: "${var.landing_root}" }
-            - { name: schema_prefix, default: "${var.schema_prefix}" }
-            - { name: rules_path,    default: "${workspace.file_path}/src/dq_rules.yml" }
-          tasks:
-            # 1 start from nothing
-            - task_key: reset
-              notebook_task: { notebook_path: ./tests/reset_schemas.py }
-            # 2 first run: everything is new
-            - task_key: dimensions_run1
-              depends_on: [{ task_key: reset }]
-              notebook_task: { notebook_path: ./src/01_dimensions.ipynb }
-            - task_key: facts_run1
-              depends_on: [{ task_key: dimensions_run1 }]
-              notebook_task: { notebook_path: ./src/02_facts.ipynb }
-            - task_key: verify_first
-              depends_on: [{ task_key: facts_run1 }]
-              notebook_task:
-                notebook_path: ./tests/verify.py
-                base_parameters:
-                  phase: first
-                  expected_fact_sales: "${var.expected_fact_sales}"
-                  expected_fact_returns: "${var.expected_fact_returns}"
-            # 3 second run with no new files: nothing may change
-            - task_key: dimensions_run2
-              depends_on: [{ task_key: verify_first }]
-              notebook_task: { notebook_path: ./src/01_dimensions.ipynb }
-            - task_key: facts_run2
-              depends_on: [{ task_key: dimensions_run2 }]
-              notebook_task: { notebook_path: ./src/02_facts.ipynb }
-            - task_key: verify_rerun
-              depends_on: [{ task_key: facts_run2 }]
-              notebook_task:
-                notebook_path: ./tests/verify.py
-                base_parameters:
-                  phase: rerun
-                  expected_fact_sales: "${var.expected_fact_sales}"
-                  expected_fact_returns: "${var.expected_fact_returns}"
-            # 4 remove the ci_ schemas, whether the tests passed or not
-            - task_key: cleanup
-              depends_on: [{ task_key: verify_rerun }]
-              run_if: ALL_DONE
-              notebook_task: { notebook_path: ./tests/reset_schemas.py }
 
   prod:
     mode: production

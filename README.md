@@ -8,13 +8,14 @@ The v11 pipeline (Volume CSVs → bronze → silver → gold, DQX rules, increme
 | Path | What |
 |---|---|
 | `src/` | `00_config`, `01_dimensions`, `02_facts` notebooks and `dq_rules.yml` (the v11 code) |
-| `resources/medallion_job.yml` | The workflow: `dimensions` → `facts` → `verify`, serverless, daily 06:00 New York (paused) |
-| `databricks.yml` | Bundle with three targets: `dev`, `ci`, `prod`; the `ci` target also holds the test workflow |
+| `jobs/medallion_job.yml` | The workflow: `dimensions` → `facts` → `verify`, serverless, daily 06:00 New York (paused) |
+| `databricks.yml` | The one master file: variables and the three environments `dev`, `ci`, `prod` |
+| `jobs/medallion_ci_test.yml` | The test workflow; exists only in the `ci` target |
 | `tests/test_repo.py` | pytest checks that run on every pull request (no Databricks) |
 | `tests/verify.py` | Checks after every load (last task of the workflow, also used by CI) |
 | `tests/reset_schemas.py` | Drops a *prefixed* copy of the schemas (refuses an empty prefix) |
 | `test_data/Batch1..4` | Sample files; CI loads all of them. Expected: `fact_sales` 394, `fact_returns` 33 |
-| `.github/workflows/ci.yml`, `cd.yml` | Pull request checks; deploy to production on merge |
+| `.github/workflows/ci.yml`, `cd.yml` | Pull request checks; on merge: deploy to production and run the job |
 
 ## Environments
 | Target | Schemas | Landing folder | Deployed by |
